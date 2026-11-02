@@ -1,0 +1,457 @@
+<div class="page-header">
+  <div>
+    <h2>Corrective Actions (CAPA)</h2>
+    <p>Create and manage Corrective and Preventive Actions with 5 Whys and Fishbone analysis</p>
+  </div>
+  <button class="btn btn-primary" (click)="openCreate()">+ New CAPA</button>
+</div>
+
+<!-- Toolbar -->
+<div class="card" style="margin-bottom:16px; padding:14px 16px;">
+  <div class="toolbar">
+    <input class="search-input" type="text" placeholder="Search by ID, defect, description, person…"
+      [(ngModel)]="searchQuery" (ngModelChange)="applyFilters()" />
+    <select class="filter-select" [(ngModel)]="filterStatus" (change)="applyFilters()">
+      <option value="">All Statuses</option>
+      @for (s of capaStatuses; track s) { <option [value]="s">{{ s }}</option> }
+    </select>
+    <select class="filter-select" [(ngModel)]="filterPriority" (change)="applyFilters()">
+      <option value="">All Priorities</option>
+      @for (p of capaPriorities; track p) { <option [value]="p">{{ p }}</option> }
+    </select>
+    <select class="filter-select" [(ngModel)]="filterDefectId" (change)="applyFilters()">
+      <option value="">All Defects</option>
+      @for (d of allDefects; track d.id) { <option [value]="d.id">{{ d.id }}</option> }
+    </select>
+    <button class="btn btn-secondary btn-sm" (click)="clearFilters()">✕ Clear</button>
+  </div>
+  <div class="text-muted text-sm">Showing {{ filteredCAPAs.length }} of {{ allCAPAs.length }} CAPAs</div>
+</div>
+
+<!-- CAPA Table -->
+<div class="card" style="padding:0">
+  <div class="table-container">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>CAPA ID</th>
+          <th>Related Defect</th>
+          <th>Problem Summary</th>
+          <th>Priority</th>
+          <th>Responsible</th>
+          <th>Dept</th>
+          <th>Target Date</th>
+          <th>Days</th>
+          <th>Status</th>
+          <th>Verified</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (c of filteredCAPAs; track c.id) {
+          <tr [class.row-overdue]="isOverdue(c)">
+            <td class="fw-bold">{{ c.id }}</td>
+            <td class="text-sm">{{ c.relatedDefectId }}</td>
+            <td class="problem-cell">{{ c.problemDescription | slice:0:60 }}{{ c.problemDescription.length > 60 ? '…' : '' }}</td>
+            <td><span class="badge" [ngClass]="getBadgeClass(c.priority)">{{ c.priority }}</span></td>
+            <td class="text-sm">{{ c.responsiblePerson }}</td>
+            <td class="text-sm text-muted">{{ c.department }}</td>
+            <td class="text-sm">{{ c.targetCompletionDate | date:'dd MMM yyyy' }}</td>
+            <td>
+              @if (isOverdue(c)) {
+                <span class="text-danger fw-bold text-sm">Overdue</span>
+              } @else {
+                <span class="text-sm" [class.text-warning]="getDaysRemaining(c) <= 3">{{ getDaysRemaining(c) }}d</span>
+              }
+            </td>
+            <td><span class="badge" [ngClass]="getBadgeClass(c.status)">{{ c.status }}</span></td>
+            <td>
+              @if (c.verification) {
+                <span class="badge" [ngClass]="getBadgeClass(c.verification.verificationResult)">{{ c.verification.verificationResult }}</span>
+              } @else {
+                <span class="text-muted text-sm">–</span>
+              }
+            </td>
+            <td>
+              <div class="btn-group">
+                <button class="btn btn-secondary btn-sm" (click)="openView(c)" title="View">👁</button>
+                <button class="btn btn-secondary btn-sm" (click)="openEdit(c)" title="Edit">✏️</button>
+                @if (canSubmitForVerification(c)) {
+                  <button class="btn btn-warning btn-sm" (click)="markPendingVerification(c)" title="Submit for Verification">📋</button>
+                }
+                @if (canVerify(c)) {
+                  <button class="btn btn-success btn-sm" (click)="openVerify(c)" title="Verify">✅</button>
+                }
+                @if (canReopen(c)) {
+                  <button class="btn btn-secondary btn-sm" (click)="reopenCAPA(c)" title="Reopen">🔄</button>
+                }
+                <button class="btn btn-danger btn-sm" (click)="confirmDelete(c.id)" title="Delete">🗑</button>
+              </div>
+            </td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="11">
+              <div class="empty-state">
+                <div class="empty-state-icon">✅</div>
+                <h3>No CAPA Records Found</h3>
+                <p>No corrective action records match your filters. Create a new CAPA to track a corrective action.</p>
+                <button class="btn btn-primary" (click)="openCreate()">+ New CAPA</button>
+              </div>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Delete Confirm -->
+@if (deleteConfirmId) {
+  <div class="modal-overlay" (click)="cancelDelete()">
+    <div class="modal" style="max-width:420px" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>⚠️ Confirm Delete</h3>
+        <button class="modal-close" (click)="cancelDelete()">×</button>
+      </div>
+      <div class="modal-body">
+        <p>Delete CAPA record <strong>{{ deleteConfirmId }}</strong>? This action is irreversible.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" (click)="cancelDelete()">Cancel</button>
+        <button class="btn btn-danger" (click)="executeDelete()">Delete</button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Create / Edit Modal -->
+@if (modalOpen && (modalMode === 'create' || modalMode === 'edit')) {
+  <div class="modal-overlay" (click)="closeModal()">
+    <div class="modal capa-modal" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>{{ modalMode === 'create' ? '+ New CAPA' : '✏️ Edit CAPA – ' + formData.id }}</h3>
+        <button class="modal-close" (click)="closeModal()">×</button>
+      </div>
+      <div class="modal-body">
+        @if (formError) {
+          <div class="form-error-banner">⚠️ {{ formError }}</div>
+        }
+
+        <!-- Basic Info -->
+        <div class="section-title">📋 CAPA Information</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Related Defect ID <span class="required">*</span></label>
+            <select class="form-control" [(ngModel)]="formData.relatedDefectId" (change)="onDefectChange()">
+              <option value="">Select Defect</option>
+              @for (d of allDefects; track d.id) {
+                <option [value]="d.id">{{ d.id }} – {{ d.productName }} ({{ d.defectCategory }} | {{ d.severity }})</option>
+              }
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Priority <span class="required">*</span></label>
+            <select class="form-control" [(ngModel)]="formData.priority">
+              @for (p of capaPriorities; track p) { <option [value]="p">{{ p }}</option> }
+            </select>
+          </div>
+        </div>
+
+        @if (linkedDefect) {
+          <div class="defect-summary">
+            <div class="insp-sum-row">
+              <span><strong>Defect:</strong> {{ linkedDefect.defectCategory }}</span>
+              <span class="badge" [ngClass]="getBadgeClass(linkedDefect.severity)">{{ linkedDefect.severity }}</span>
+              <span><strong>Qty:</strong> {{ linkedDefect.defectiveQuantity }}</span>
+              <span><strong>Dept:</strong> {{ linkedDefect.responsibleDepartment }}</span>
+            </div>
+          </div>
+        }
+
+        <div class="form-group">
+          <label>Problem Description <span class="required">*</span></label>
+          <textarea class="form-control" [(ngModel)]="formData.problemDescription" rows="3"
+            placeholder="Describe the quality problem clearly…"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Root Cause Analysis</label>
+          <textarea class="form-control" [(ngModel)]="formData.rootCauseAnalysis" rows="2"
+            placeholder="Summary of root cause identified…"></textarea>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Corrective Action <span class="required">*</span></label>
+            <textarea class="form-control" [(ngModel)]="formData.correctiveAction" rows="3"
+              placeholder="Actions taken to fix the current problem…"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Preventive Action</label>
+            <textarea class="form-control" [(ngModel)]="formData.preventiveAction" rows="3"
+              placeholder="Actions to prevent recurrence…"></textarea>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Responsible Person <span class="required">*</span></label>
+            <input class="form-control" type="text" [(ngModel)]="formData.responsiblePerson" placeholder="Full name" />
+          </div>
+          <div class="form-group">
+            <label>Department <span class="required">*</span></label>
+            <select class="form-control" [(ngModel)]="formData.department">
+              @for (dept of departments; track dept) { <option [value]="dept">{{ dept }}</option> }
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Created Date <span class="required">*</span></label>
+            <input class="form-control" type="date" [(ngModel)]="formData.createdDate" />
+          </div>
+          <div class="form-group">
+            <label>Target Completion Date <span class="required">*</span></label>
+            <input class="form-control" type="date" [(ngModel)]="formData.targetCompletionDate" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Status <span class="required">*</span></label>
+          <select class="form-control" [(ngModel)]="formData.status">
+            @for (s of capaStatuses; track s) { <option [value]="s">{{ s }}</option> }
+          </select>
+        </div>
+
+        <!-- 5 Whys Analysis -->
+        <div class="section-divider"></div>
+        <div class="section-title">🔍 5 Whys Root Cause Analysis</div>
+        <div class="five-whys-chain">
+          <div class="why-item">
+            <div class="why-badge">Why 1</div>
+            <div class="form-group" style="margin:0;flex:1">
+              <input class="form-control" type="text" [(ngModel)]="formFiveWhys.why1"
+                placeholder="Why did the problem occur?" />
+            </div>
+          </div>
+          <div class="why-arrow">↓</div>
+          <div class="why-item">
+            <div class="why-badge">Why 2</div>
+            <div class="form-group" style="margin:0;flex:1">
+              <input class="form-control" type="text" [(ngModel)]="formFiveWhys.why2"
+                placeholder="Why did Why 1 happen?" />
+            </div>
+          </div>
+          <div class="why-arrow">↓</div>
+          <div class="why-item">
+            <div class="why-badge">Why 3</div>
+            <div class="form-group" style="margin:0;flex:1">
+              <input class="form-control" type="text" [(ngModel)]="formFiveWhys.why3"
+                placeholder="Why did Why 2 happen?" />
+            </div>
+          </div>
+          <div class="why-arrow">↓</div>
+          <div class="why-item">
+            <div class="why-badge">Why 4</div>
+            <div class="form-group" style="margin:0;flex:1">
+              <input class="form-control" type="text" [(ngModel)]="formFiveWhys.why4"
+                placeholder="Why did Why 3 happen?" />
+            </div>
+          </div>
+          <div class="why-arrow">↓</div>
+          <div class="why-item">
+            <div class="why-badge why-badge-root">Why 5</div>
+            <div class="form-group" style="margin:0;flex:1">
+              <input class="form-control" type="text" [(ngModel)]="formFiveWhys.why5"
+                placeholder="Root cause identified" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Fishbone / Ishikawa -->
+        <div class="section-divider"></div>
+        <div class="section-title">🐟 Fishbone / Ishikawa Cause Analysis</div>
+        <div class="fishbone-grid">
+          <div class="fishbone-item">
+            <div class="fishbone-label man">👤 Man</div>
+            <textarea class="form-control" [(ngModel)]="formFishbone.man" rows="2"
+              placeholder="Human factors, skills, training…"></textarea>
+          </div>
+          <div class="fishbone-item">
+            <div class="fishbone-label machine">⚙️ Machine</div>
+            <textarea class="form-control" [(ngModel)]="formFishbone.machine" rows="2"
+              placeholder="Equipment, tooling, calibration…"></textarea>
+          </div>
+          <div class="fishbone-item">
+            <div class="fishbone-label method">📋 Method</div>
+            <textarea class="form-control" [(ngModel)]="formFishbone.method" rows="2"
+              placeholder="Process, SOP, procedures…"></textarea>
+          </div>
+          <div class="fishbone-item">
+            <div class="fishbone-label material">📦 Material</div>
+            <textarea class="form-control" [(ngModel)]="formFishbone.material" rows="2"
+              placeholder="Raw material, components, specs…"></textarea>
+          </div>
+          <div class="fishbone-item">
+            <div class="fishbone-label measurement">📏 Measurement</div>
+            <textarea class="form-control" [(ngModel)]="formFishbone.measurement" rows="2"
+              placeholder="Inspection, gauging, accuracy…"></textarea>
+          </div>
+          <div class="fishbone-item">
+            <div class="fishbone-label environment">🌡️ Environment</div>
+            <textarea class="form-control" [(ngModel)]="formFishbone.environment" rows="2"
+              placeholder="Temperature, humidity, workspace…"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" (click)="closeModal()">Cancel</button>
+        <button class="btn btn-primary" (click)="submitForm()">
+          {{ modalMode === 'create' ? 'Create CAPA' : 'Save Changes' }}
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Verification Modal -->
+@if (modalOpen && modalMode === 'verify' && selectedCAPA) {
+  <div class="modal-overlay" (click)="closeModal()">
+    <div class="modal" style="max-width:520px" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>✅ Verify CAPA – {{ selectedCAPA.id }}</h3>
+        <button class="modal-close" (click)="closeModal()">×</button>
+      </div>
+      <div class="modal-body">
+        @if (verifyError) {
+          <div class="form-error-banner">⚠️ {{ verifyError }}</div>
+        }
+        <div class="verify-info-box">
+          <div class="text-sm text-muted">Corrective Action</div>
+          <div class="text-sm fw-bold mt-1">{{ selectedCAPA.correctiveAction | slice:0:120 }}{{ selectedCAPA.correctiveAction.length > 120 ? '…' : '' }}</div>
+        </div>
+        <div class="form-group">
+          <label>Verification Date <span class="required">*</span></label>
+          <input class="form-control" type="date" [(ngModel)]="verifyForm.verificationDate" />
+        </div>
+        <div class="form-group">
+          <label>Verified By <span class="required">*</span></label>
+          <input class="form-control" type="text" [(ngModel)]="verifyForm.verifiedBy" placeholder="Verifier name" />
+        </div>
+        <div class="form-group">
+          <label>Verification Result <span class="required">*</span></label>
+          <select class="form-control" [(ngModel)]="verifyForm.verificationResult">
+            @for (r of verificationResults; track r) { <option [value]="r">{{ r }}</option> }
+          </select>
+          <div class="form-error" style="color:#64748b; font-weight:400; margin-top:6px">
+            <strong>Effective</strong> → Completed &nbsp;|&nbsp;
+            <strong>Not Effective</strong> → Rejected &nbsp;|&nbsp;
+            <strong>Requires Further Action</strong> → Back to In Progress
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Verification Notes</label>
+          <textarea class="form-control" [(ngModel)]="verifyForm.verificationNotes" rows="3"
+            placeholder="Evidence of effectiveness, observations…"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" (click)="closeModal()">Cancel</button>
+        <button class="btn btn-success" (click)="submitVerification()">Submit Verification</button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- View Details Modal -->
+@if (modalOpen && modalMode === 'view' && selectedCAPA) {
+  <div class="modal-overlay" (click)="closeModal()">
+    <div class="modal capa-modal" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>✅ CAPA Details – {{ selectedCAPA.id }}</h3>
+        <button class="modal-close" (click)="closeModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="detail-badges">
+          <span class="badge" [ngClass]="getBadgeClass(selectedCAPA.status)">{{ selectedCAPA.status }}</span>
+          <span class="badge" [ngClass]="getBadgeClass(selectedCAPA.priority)">{{ selectedCAPA.priority }}</span>
+          @if (isOverdue(selectedCAPA)) { <span class="badge badge-fail">OVERDUE</span> }
+        </div>
+
+        <div class="detail-grid">
+          <div class="detail-item"><span class="detail-label">CAPA ID</span><span class="detail-value fw-bold">{{ selectedCAPA.id }}</span></div>
+          <div class="detail-item"><span class="detail-label">Related Defect</span><span class="detail-value">{{ selectedCAPA.relatedDefectId }}</span></div>
+          <div class="detail-item"><span class="detail-label">Responsible Person</span><span class="detail-value">{{ selectedCAPA.responsiblePerson }}</span></div>
+          <div class="detail-item"><span class="detail-label">Department</span><span class="detail-value">{{ selectedCAPA.department }}</span></div>
+          <div class="detail-item"><span class="detail-label">Created Date</span><span class="detail-value">{{ selectedCAPA.createdDate | date:'dd MMM yyyy' }}</span></div>
+          <div class="detail-item"><span class="detail-label">Target Completion</span><span class="detail-value">{{ selectedCAPA.targetCompletionDate | date:'dd MMM yyyy' }}</span></div>
+        </div>
+
+        <div class="detail-section"><div class="detail-label">Problem Description</div><div class="detail-notes mt-1">{{ selectedCAPA.problemDescription }}</div></div>
+        <div class="detail-section mt-2"><div class="detail-label">Root Cause Analysis</div><div class="detail-notes mt-1">{{ selectedCAPA.rootCauseAnalysis || '—' }}</div></div>
+        <div class="detail-section mt-2"><div class="detail-label">Corrective Action</div><div class="detail-notes mt-1">{{ selectedCAPA.correctiveAction }}</div></div>
+        @if (selectedCAPA.preventiveAction) {
+          <div class="detail-section mt-2"><div class="detail-label">Preventive Action</div><div class="detail-notes mt-1">{{ selectedCAPA.preventiveAction }}</div></div>
+        }
+
+        <!-- 5 Whys display -->
+        @if (selectedCAPA.fiveWhys) {
+          <div class="section-divider"></div>
+          <div class="section-title">🔍 5 Whys Analysis</div>
+          <div class="whys-view">
+            @if (selectedCAPA.fiveWhys.why1) { <div class="why-view-item"><span class="why-num">Why 1</span><span>{{ selectedCAPA.fiveWhys.why1 }}</span></div> }
+            @if (selectedCAPA.fiveWhys.why2) { <div class="why-view-item"><span class="why-num">Why 2</span><span>{{ selectedCAPA.fiveWhys.why2 }}</span></div> }
+            @if (selectedCAPA.fiveWhys.why3) { <div class="why-view-item"><span class="why-num">Why 3</span><span>{{ selectedCAPA.fiveWhys.why3 }}</span></div> }
+            @if (selectedCAPA.fiveWhys.why4) { <div class="why-view-item"><span class="why-num">Why 4</span><span>{{ selectedCAPA.fiveWhys.why4 }}</span></div> }
+            @if (selectedCAPA.fiveWhys.why5) { <div class="why-view-item why-view-root"><span class="why-num">Why 5 (Root)</span><span>{{ selectedCAPA.fiveWhys.why5 }}</span></div> }
+          </div>
+        }
+
+        <!-- Fishbone display -->
+        @if (selectedCAPA.fishbone) {
+          <div class="section-divider"></div>
+          <div class="section-title">🐟 Fishbone Analysis</div>
+          <div class="fishbone-view-grid">
+            @if (selectedCAPA.fishbone.man) { <div class="fishbone-view-item"><div class="fishbone-view-label man">👤 Man</div><div>{{ selectedCAPA.fishbone.man }}</div></div> }
+            @if (selectedCAPA.fishbone.machine) { <div class="fishbone-view-item"><div class="fishbone-view-label machine">⚙️ Machine</div><div>{{ selectedCAPA.fishbone.machine }}</div></div> }
+            @if (selectedCAPA.fishbone.method) { <div class="fishbone-view-item"><div class="fishbone-view-label method">📋 Method</div><div>{{ selectedCAPA.fishbone.method }}</div></div> }
+            @if (selectedCAPA.fishbone.material) { <div class="fishbone-view-item"><div class="fishbone-view-label material">📦 Material</div><div>{{ selectedCAPA.fishbone.material }}</div></div> }
+            @if (selectedCAPA.fishbone.measurement) { <div class="fishbone-view-item"><div class="fishbone-view-label measurement">📏 Measurement</div><div>{{ selectedCAPA.fishbone.measurement }}</div></div> }
+            @if (selectedCAPA.fishbone.environment) { <div class="fishbone-view-item"><div class="fishbone-view-label environment">🌡️ Environment</div><div>{{ selectedCAPA.fishbone.environment }}</div></div> }
+          </div>
+        }
+
+        <!-- Verification display -->
+        @if (selectedCAPA.verification) {
+          <div class="section-divider"></div>
+          <div class="section-title">✅ Verification Record</div>
+          <div class="verification-box">
+            <div class="detail-grid">
+              <div class="detail-item"><span class="detail-label">Verification Date</span><span class="detail-value">{{ selectedCAPA.verification.verificationDate | date:'dd MMM yyyy' }}</span></div>
+              <div class="detail-item"><span class="detail-label">Verified By</span><span class="detail-value">{{ selectedCAPA.verification.verifiedBy }}</span></div>
+              <div class="detail-item"><span class="detail-label">Result</span><span class="badge" [ngClass]="getBadgeClass(selectedCAPA.verification.verificationResult)">{{ selectedCAPA.verification.verificationResult }}</span></div>
+            </div>
+            @if (selectedCAPA.verification.verificationNotes) {
+              <div class="detail-notes mt-2">{{ selectedCAPA.verification.verificationNotes }}</div>
+            }
+          </div>
+        }
+
+        <div class="detail-meta text-sm text-muted mt-2">
+          Created: {{ selectedCAPA.createdAt | date:'dd MMM yyyy, HH:mm' }} &nbsp;|&nbsp;
+          Updated: {{ selectedCAPA.updatedAt | date:'dd MMM yyyy, HH:mm' }}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" (click)="closeModal()">Close</button>
+        @if (canVerify(selectedCAPA)) {
+          <button class="btn btn-success" (click)="closeModal(); openVerify(selectedCAPA!)">Verify</button>
+        }
+        <button class="btn btn-primary" (click)="closeModal(); openEdit(selectedCAPA!)">Edit</button>
+      </div>
+    </div>
+  </div>
+}
+

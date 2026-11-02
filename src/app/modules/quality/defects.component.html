@@ -1,0 +1,273 @@
+<div class="page-header">
+  <div>
+    <h2>Defect Management</h2>
+    <p>Register, track and manage quality defects linked to inspection records</p>
+  </div>
+  <button class="btn btn-primary" (click)="openCreate()">+ Register Defect</button>
+</div>
+
+<!-- Toolbar -->
+<div class="card" style="margin-bottom:16px; padding:14px 16px;">
+  <div class="toolbar">
+    <input class="search-input" type="text" placeholder="Search by ID, product, batch, description…"
+      [(ngModel)]="searchQuery" (ngModelChange)="applyFilters()" />
+    <select class="filter-select" [(ngModel)]="filterSeverity" (change)="applyFilters()">
+      <option value="">All Severities</option>
+      @for (s of defectSeverities; track s) { <option [value]="s">{{ s }}</option> }
+    </select>
+    <select class="filter-select" [(ngModel)]="filterCategory" (change)="applyFilters()">
+      <option value="">All Categories</option>
+      @for (c of defectCategories; track c) { <option [value]="c">{{ c }}</option> }
+    </select>
+    <select class="filter-select" [(ngModel)]="filterStatus" (change)="applyFilters()">
+      <option value="">All Statuses</option>
+      @for (s of defectStatuses; track s) { <option [value]="s">{{ s }}</option> }
+    </select>
+    <select class="filter-select" [(ngModel)]="filterInspectionId" (change)="applyFilters()">
+      <option value="">All Inspections</option>
+      @for (i of allInspections; track i.id) { <option [value]="i.id">{{ i.id }}</option> }
+    </select>
+    <button class="btn btn-secondary btn-sm" (click)="clearFilters()">✕ Clear</button>
+  </div>
+  <div class="text-muted text-sm">Showing {{ filteredDefects.length }} of {{ allDefects.length }} defects</div>
+</div>
+
+<!-- Defects Table -->
+<div class="card" style="padding:0">
+  <div class="table-container">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Defect ID</th>
+          <th>Inspection ID</th>
+          <th>Product</th>
+          <th>Batch</th>
+          <th>Category</th>
+          <th>Severity</th>
+          <th>Qty</th>
+          <th>Dept</th>
+          <th>Detected</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (d of filteredDefects; track d.id) {
+          <tr>
+            <td class="fw-bold">{{ d.id }}</td>
+            <td class="text-sm">{{ d.inspectionId }}</td>
+            <td>{{ d.productName }}</td>
+            <td class="text-sm">{{ d.batchNumber }}</td>
+            <td class="text-sm">{{ d.defectCategory }}</td>
+            <td><span class="badge" [ngClass]="getBadgeClass(d.severity)">{{ d.severity }}</span></td>
+            <td class="text-center fw-bold text-danger">{{ d.defectiveQuantity }}</td>
+            <td class="text-sm text-muted">{{ d.responsibleDepartment }}</td>
+            <td class="text-sm">{{ d.detectionDate | date:'dd MMM yyyy' }}</td>
+            <td><span class="badge" [ngClass]="getBadgeClass(d.status)">{{ d.status }}</span></td>
+            <td>
+              <div class="btn-group">
+                <button class="btn btn-secondary btn-sm" (click)="openView(d)" title="View">👁</button>
+                <button class="btn btn-secondary btn-sm" (click)="openEdit(d)" title="Edit">✏️</button>
+                <button class="btn btn-danger btn-sm" (click)="confirmDelete(d.id)" title="Delete">🗑</button>
+              </div>
+            </td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="11">
+              <div class="empty-state">
+                <div class="empty-state-icon">⚠️</div>
+                <h3>No Defects Found</h3>
+                <p>No defect records match your filters. Register a new defect linked to an inspection.</p>
+                <button class="btn btn-primary" (click)="openCreate()">+ Register Defect</button>
+              </div>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Delete Confirm -->
+@if (deleteConfirmId) {
+  <div class="modal-overlay" (click)="cancelDelete()">
+    <div class="modal" style="max-width:420px" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>⚠️ Confirm Delete</h3>
+        <button class="modal-close" (click)="cancelDelete()">×</button>
+      </div>
+      <div class="modal-body">
+        <p>Delete defect record <strong>{{ deleteConfirmId }}</strong>? CAPA records linked to this defect will prevent deletion.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" (click)="cancelDelete()">Cancel</button>
+        <button class="btn btn-danger" (click)="executeDelete()">Delete</button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Create / Edit Modal -->
+@if (modalOpen && (modalMode === 'create' || modalMode === 'edit')) {
+  <div class="modal-overlay" (click)="closeModal()">
+    <div class="modal modal-lg" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>{{ modalMode === 'create' ? '+ Register Defect' : '✏️ Edit Defect' }}</h3>
+        <button class="modal-close" (click)="closeModal()">×</button>
+      </div>
+      <div class="modal-body">
+        @if (formError) {
+          <div class="form-error-banner">⚠️ {{ formError }}</div>
+        }
+
+        <div class="form-group">
+          <label>Linked Inspection ID <span class="required">*</span></label>
+          <select class="form-control" [(ngModel)]="formData.inspectionId" (change)="onInspectionChange()">
+            <option value="">Select Inspection Record</option>
+            @for (i of allInspections; track i.id) {
+              <option [value]="i.id">{{ i.id }} – {{ i.productName }} (Batch: {{ i.batchNumber }} | Defective Qty: {{ i.defectiveQuantity }})</option>
+            }
+          </select>
+        </div>
+
+        @if (linkedInspection) {
+          <div class="inspection-summary">
+            <div class="insp-sum-row">
+              <span><strong>Order:</strong> {{ linkedInspection.productionOrderRef }}</span>
+              <span><strong>Batch:</strong> {{ linkedInspection.batchNumber }}</span>
+              <span><strong>Defective:</strong> {{ linkedInspection.defectiveQuantity }}</span>
+              <span><strong>Available:</strong> <span [class.text-danger]="getRemainingDefectQty() === 0">{{ getRemainingDefectQty() }}</span></span>
+            </div>
+          </div>
+        }
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Production Order Ref</label>
+            <input class="form-control" type="text" [(ngModel)]="formData.productionOrderRef" readonly />
+          </div>
+          <div class="form-group">
+            <label>Product Name</label>
+            <input class="form-control" type="text" [(ngModel)]="formData.productName" readonly />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Batch Number</label>
+            <input class="form-control" type="text" [(ngModel)]="formData.batchNumber" readonly />
+          </div>
+          <div class="form-group">
+            <label>Detection Date <span class="required">*</span></label>
+            <input class="form-control" type="date" [(ngModel)]="formData.detectionDate" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Defect Category <span class="required">*</span></label>
+            <select class="form-control" [(ngModel)]="formData.defectCategory">
+              @for (c of defectCategories; track c) { <option [value]="c">{{ c }}</option> }
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Severity <span class="required">*</span></label>
+            <select class="form-control" [(ngModel)]="formData.severity">
+              @for (s of defectSeverities; track s) { <option [value]="s">{{ s }}</option> }
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Defective Quantity <span class="required">*</span></label>
+            <input class="form-control" type="number" min="1" [(ngModel)]="formData.defectiveQuantity" />
+            @if (linkedInspection) {
+              <div class="form-error" style="color:#64748b">Max allowed: {{ getRemainingDefectQty() }}</div>
+            }
+          </div>
+          <div class="form-group">
+            <label>Responsible Department <span class="required">*</span></label>
+            <select class="form-control" [(ngModel)]="formData.responsibleDepartment">
+              @for (dept of departments; track dept) { <option [value]="dept">{{ dept }}</option> }
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Defect Description <span class="required">*</span></label>
+          <textarea class="form-control" [(ngModel)]="formData.defectDescription" rows="3"
+            placeholder="Detailed description of the defect…"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Root Cause</label>
+          <textarea class="form-control" [(ngModel)]="formData.rootCause" rows="2"
+            placeholder="Initial root cause assessment…"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Status <span class="required">*</span></label>
+          <select class="form-control" [(ngModel)]="formData.status">
+            @for (s of defectStatuses; track s) { <option [value]="s">{{ s }}</option> }
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" (click)="closeModal()">Cancel</button>
+        <button class="btn btn-primary" (click)="submitForm()">
+          {{ modalMode === 'create' ? 'Register Defect' : 'Save Changes' }}
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- View Details Modal -->
+@if (modalOpen && modalMode === 'view' && selectedDefect) {
+  <div class="modal-overlay" (click)="closeModal()">
+    <div class="modal modal-lg" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>⚠️ Defect Details – {{ selectedDefect.id }}</h3>
+        <button class="modal-close" (click)="closeModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="detail-header-row">
+          <span class="badge" [ngClass]="getBadgeClass(selectedDefect.severity)">{{ selectedDefect.severity }}</span>
+          <span class="badge" [ngClass]="getBadgeClass(selectedDefect.status)">{{ selectedDefect.status }}</span>
+        </div>
+        <div class="detail-grid">
+          <div class="detail-item"><span class="detail-label">Defect ID</span><span class="detail-value fw-bold">{{ selectedDefect.id }}</span></div>
+          <div class="detail-item"><span class="detail-label">Inspection ID</span><span class="detail-value">{{ selectedDefect.inspectionId }}</span></div>
+          <div class="detail-item"><span class="detail-label">Production Order</span><span class="detail-value">{{ selectedDefect.productionOrderRef }}</span></div>
+          <div class="detail-item"><span class="detail-label">Product Name</span><span class="detail-value">{{ selectedDefect.productName }}</span></div>
+          <div class="detail-item"><span class="detail-label">Batch Number</span><span class="detail-value">{{ selectedDefect.batchNumber }}</span></div>
+          <div class="detail-item"><span class="detail-label">Defect Category</span><span class="detail-value">{{ selectedDefect.defectCategory }}</span></div>
+          <div class="detail-item"><span class="detail-label">Defective Qty</span><span class="detail-value text-danger fw-bold">{{ selectedDefect.defectiveQuantity }}</span></div>
+          <div class="detail-item"><span class="detail-label">Dept</span><span class="detail-value">{{ selectedDefect.responsibleDepartment }}</span></div>
+          <div class="detail-item"><span class="detail-label">Detected</span><span class="detail-value">{{ selectedDefect.detectionDate | date:'dd MMM yyyy' }}</span></div>
+        </div>
+        <div class="detail-section">
+          <div class="detail-label">Defect Description</div>
+          <div class="detail-notes mt-1">{{ selectedDefect.defectDescription }}</div>
+        </div>
+        @if (selectedDefect.rootCause) {
+          <div class="detail-section mt-2">
+            <div class="detail-label">Root Cause</div>
+            <div class="detail-notes mt-1">{{ selectedDefect.rootCause }}</div>
+          </div>
+        }
+        <div class="detail-meta text-sm text-muted mt-2">
+          Created: {{ selectedDefect.createdAt | date:'dd MMM yyyy, HH:mm' }} &nbsp;|&nbsp;
+          Updated: {{ selectedDefect.updatedAt | date:'dd MMM yyyy, HH:mm' }}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" (click)="closeModal()">Close</button>
+        <button class="btn btn-primary" (click)="closeModal(); openEdit(selectedDefect!)">Edit</button>
+      </div>
+    </div>
+  </div>
+}
+

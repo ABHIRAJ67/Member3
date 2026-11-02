@@ -1,0 +1,261 @@
+<div class="page-header">
+  <div>
+    <h2>Quality Dashboard</h2>
+    <p>Real-time overview of quality control performance, inspections, defects and corrective actions</p>
+  </div>
+  <div class="btn-group">
+    <button class="btn btn-secondary btn-sm" (click)="loadDashboard()">🔄 Refresh</button>
+    <a routerLink="/quality/inspections" class="btn btn-primary btn-sm">+ New Inspection</a>
+  </div>
+</div>
+
+<!-- KPI Grid -->
+<div class="kpi-grid">
+  <div class="kpi-card blue">
+    <div class="kpi-value">{{ stats?.totalInspections ?? 0 }}</div>
+    <div class="kpi-label">Total Inspections</div>
+  </div>
+  <div class="kpi-card green">
+    <div class="kpi-value">{{ stats?.passedInspections ?? 0 }}</div>
+    <div class="kpi-label">Passed Inspections</div>
+  </div>
+  <div class="kpi-card red">
+    <div class="kpi-value">{{ stats?.failedInspections ?? 0 }}</div>
+    <div class="kpi-label">Failed Inspections</div>
+  </div>
+  <div class="kpi-card orange">
+    <div class="kpi-value">{{ stats?.pendingInspections ?? 0 }}</div>
+    <div class="kpi-label">Pending Inspections</div>
+  </div>
+  <div class="kpi-card red">
+    <div class="kpi-value">{{ stats?.totalDefects ?? 0 }}</div>
+    <div class="kpi-label">Total Defects</div>
+  </div>
+  <div class="kpi-card red">
+    <div class="kpi-value">{{ stats?.criticalDefects ?? 0 }}</div>
+    <div class="kpi-label">Critical Defects</div>
+  </div>
+  <div class="kpi-card orange">
+    <div class="kpi-value">{{ stats?.openCAPAs ?? 0 }}</div>
+    <div class="kpi-label">Open CAPAs</div>
+  </div>
+  <div class="kpi-card green">
+    <div class="kpi-value">{{ stats?.completedCAPAs ?? 0 }}</div>
+    <div class="kpi-label">Completed CAPAs</div>
+  </div>
+  <div class="kpi-card teal">
+    <div class="kpi-value">{{ stats?.firstPassYield ?? 0 | number:'1.1-1' }}%</div>
+    <div class="kpi-label">First Pass Yield</div>
+  </div>
+  <div class="kpi-card blue">
+    <div class="kpi-value">{{ stats?.inspectionPassRate ?? 0 | number:'1.1-1' }}%</div>
+    <div class="kpi-label">Inspection Pass Rate</div>
+  </div>
+  <div class="kpi-card orange">
+    <div class="kpi-value">{{ stats?.defectRate ?? 0 | number:'1.1-1' }}%</div>
+    <div class="kpi-label">Defect Rate</div>
+  </div>
+</div>
+
+<!-- Charts Row 1 -->
+<div class="grid-2">
+  <!-- Inspection Pass vs Fail by Type -->
+  <div class="card">
+    <div class="card-header">
+      <h3>🔍 Inspection Results by Type</h3>
+    </div>
+    @if (inspectionsByType.length > 0) {
+      <div class="chart-legend">
+        <span class="legend-dot green"></span><span>Passed</span>
+        <span class="legend-dot red"></span><span>Failed/Reinspect</span>
+      </div>
+      <div class="grouped-bar-chart">
+        @for (item of inspectionsByType; track item.label) {
+          <div class="grouped-bar-item">
+            <div class="grouped-bars">
+              <div class="bar green"
+                [style.height.px]="getBarHeight(item.passed, getMaxBar(inspectionsByType))"
+                [title]="'Passed: ' + item.passed">
+              </div>
+              <div class="bar red"
+                [style.height.px]="getBarHeight(item.failed, getMaxBar(inspectionsByType))"
+                [title]="'Failed: ' + item.failed">
+              </div>
+            </div>
+            <div class="bar-label">{{ item.label }}</div>
+            <div class="bar-value">{{ item.total }}</div>
+          </div>
+        }
+      </div>
+    } @else {
+      <div class="empty-state">
+        <div class="empty-state-icon">📊</div>
+        <p>No inspection data available</p>
+      </div>
+    }
+  </div>
+
+  <!-- Monthly Trend -->
+  <div class="card">
+    <div class="card-header">
+      <h3>📈 Monthly Inspection Trend</h3>
+    </div>
+    <div class="chart-legend">
+      <span class="legend-dot blue"></span><span>Total</span>
+      <span class="legend-dot green"></span><span>Passed</span>
+    </div>
+    <div class="bar-chart">
+      @for (item of monthlyTrend; track item.label) {
+        <div class="bar-chart-item">
+          <div class="bar-value">{{ item.total }}</div>
+          <div class="bar blue" [style.height.px]="getBarHeight(item.total, getMaxTrendBar(monthlyTrend))"></div>
+          <div class="bar-label">{{ item.label }}</div>
+        </div>
+      }
+    </div>
+  </div>
+</div>
+
+<!-- Charts Row 2 -->
+<div class="grid-2">
+  <!-- Defects by Severity -->
+  <div class="card">
+    <div class="card-header">
+      <h3>⚠️ Defects by Severity</h3>
+    </div>
+    @if (defectsBySeverity.length > 0) {
+      <div class="severity-chart">
+        @for (item of defectsBySeverity; track item.label) {
+          <div class="severity-row">
+            <div class="severity-label">
+              <span class="badge" [ngClass]="getBadgeClass(item.label)">{{ item.label }}</span>
+            </div>
+            <div class="severity-bar-wrap">
+              <div class="severity-bar" [style.width.%]="(item.count / stats.totalDefects) * 100" [style.background]="item.color"></div>
+            </div>
+            <div class="severity-count">{{ item.count }}</div>
+          </div>
+        }
+      </div>
+    } @else {
+      <div class="empty-state"><p>No defects recorded</p></div>
+    }
+  </div>
+
+  <!-- CAPA Status Distribution -->
+  <div class="card">
+    <div class="card-header">
+      <h3>✅ CAPA Status Distribution</h3>
+    </div>
+    @if (capaStatusData.length > 0) {
+      <div class="capa-status-list">
+        @for (item of capaStatusData; track item.label) {
+          <div class="capa-status-row">
+            <div class="capa-dot" [style.background]="item.color"></div>
+            <div class="capa-status-label">{{ item.label }}</div>
+            <div class="capa-count-badge" [style.background]="item.color + '20'" [style.color]="item.color">{{ item.count }}</div>
+          </div>
+        }
+      </div>
+    } @else {
+      <div class="empty-state"><p>No CAPA records found</p></div>
+    }
+  </div>
+</div>
+
+<!-- Defects by Category -->
+<div class="card">
+  <div class="card-header">
+    <h3>🏷️ Defects by Category</h3>
+  </div>
+  @if (defectsByCategory.length > 0) {
+    <div class="category-chart">
+      @for (item of defectsByCategory; track item.label) {
+        <div class="category-row">
+          <div class="category-label">{{ item.label }}</div>
+          <div class="category-bar-wrap">
+            <div class="progress-bar">
+              <div class="progress-bar-fill blue" [style.width.%]="item.percent"></div>
+            </div>
+          </div>
+          <div class="category-stats">
+            <span>{{ item.count }}</span>
+            <span class="text-muted text-sm">{{ item.percent }}%</span>
+          </div>
+        </div>
+      }
+    </div>
+  } @else {
+    <div class="empty-state"><p>No defect category data available</p></div>
+  }
+</div>
+
+<!-- Bottom Tables Row -->
+<div class="grid-2">
+  <!-- Recent Inspections -->
+  <div class="card">
+    <div class="card-header">
+      <h3>🔍 Recent Inspections</h3>
+      <a routerLink="/quality/inspections" class="btn btn-secondary btn-sm">View All</a>
+    </div>
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Product</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (insp of recentInspections; track insp.id) {
+            <tr>
+              <td class="fw-bold">{{ insp.id }}</td>
+              <td>{{ insp.productName }}</td>
+              <td class="text-sm text-muted">{{ insp.inspectionType.replace(' Inspection', '') }}</td>
+              <td><span class="badge" [ngClass]="getBadgeClass(insp.status)">{{ insp.status }}</span></td>
+              <td class="text-sm">{{ insp.inspectionDate | date:'dd MMM' }}</td>
+            </tr>
+          } @empty {
+            <tr><td colspan="5" class="text-center text-muted">No inspections yet</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Critical Defect Alerts -->
+  <div class="card">
+    <div class="card-header">
+      <h3>🚨 Critical Defect Alerts</h3>
+      <a routerLink="/quality/defects" class="btn btn-danger btn-sm">View All</a>
+    </div>
+    @if (criticalDefects.length > 0) {
+      <div class="alert-list">
+        @for (d of criticalDefects; track d.id) {
+          <div class="alert-item">
+            <div class="alert-icon">🔴</div>
+            <div class="alert-content">
+              <div class="alert-id">{{ d.id }} – {{ d.defectCategory }}</div>
+              <div class="alert-desc">{{ d.defectDescription | slice:0:80 }}...</div>
+              <div class="alert-meta">
+                <span class="badge badge-critical">Critical</span>
+                <span class="text-sm text-muted">{{ d.detectionDate | date:'dd MMM yyyy' }}</span>
+                <span class="text-sm">Qty: {{ d.defectiveQuantity }}</span>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+    } @else {
+      <div class="empty-state">
+        <div class="empty-state-icon">✅</div>
+        <h3>No Critical Defects</h3>
+        <p>All critical defects have been resolved.</p>
+      </div>
+    }
+  </div>
+</div>
+
